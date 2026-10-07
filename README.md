@@ -102,6 +102,8 @@ DEV_UID=$(id -u) DEV_GID=$(id -g) podman-compose -f compose.yaml -f compose.buil
 
 `UID`/`GID` sind in bash readonly, deshalb die eigenen Variablen `DEV_UID`/`DEV_GID` (Default `1000`, falls nicht gesetzt).
 
+`compose.yaml` setzt `x-podman: in_pod: false`, weil podman-compose sonst standardmäßig einen Pod anlegt und `--userns=keep-id` dann mit `--pod` kollidiert (`Error: --userns and --pod cannot be set together`). Greift das bei deiner podman-compose-Version nicht, stattdessen `podman-compose --in-pod=false up -d` aufrufen.
+
 - Die Datei `scripts/review.sh` muss relativ zur `Containerfile` unter `scripts/` liegen (Build-Kontext), sonst scheitert der `COPY`-Schritt. Ein fehlendes Ausführungsrecht ist unkritisch, die Containerfile setzt es selbst.
 - `--init` sorgt dafür, dass der Container sauber auf Stop-Signale reagiert.
 - Build-Args mit Standardwerten: `NODE_MAJOR=22`, `FLUTTER_REF=stable` (Branch oder Tag, z. B. `3.35.0`), `USERNAME=dev`.

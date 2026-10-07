@@ -1,3 +1,6 @@
+x-podman:
+  in_pod: false
+
 services:
   blm-dev:
     image: ghcr.io/theoleuthardt/claude-devcontainer:latest

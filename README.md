@@ -91,6 +91,18 @@ Verbindet Claude-App/claude.ai/code mit der Claude-Code-Session im Container. St
 
 `review [base-branch]` (Default `main`) läuft `coderabbit review --agent`, bei Fehlschlag Fallback auf Ollama. Ausgabe beider Quellen ist NDJSON im CodeRabbit-`--agent`-Schema (`type`, `severity`, `fileName`, `codegenInstructions`, `suggestions`, `comment`), damit Claude sie gleich behandeln kann.
 
+Weder `OLLAMA_REVIEW_MODEL` noch `OLLAMA_API_KEY` stehen im Image - in der eigenen `compose.yaml` ergänzen, Key nicht im Klartext, sondern über `.env` (gitignored):
+
+```yaml
+services:
+  blm-dev:
+    environment:
+      OLLAMA_REVIEW_MODEL: <modellname>
+    env_file: .env   # enthält OLLAMA_API_KEY=...
+```
+
+Danach `podman-compose up -d --force-recreate`.
+
 | Variable | Bedeutung | Standard |
 |---|---|---|
 | `OLLAMA_REVIEW_MODEL` | Fallback-Modell, ohne Wert kein Fallback | nicht gesetzt |

@@ -141,7 +141,7 @@ review develop    # anderer Basis-Branch
 2. Bei Exit-Code ungleich 0, oder wenn die Ausgabe wie eine Limit-/Anmeldemeldung aussieht, greift der Fallback.
 3. Der Fallback sendet den Diff gegenüber dem Merge-Base des Basis-Branches (committed und uncommitted, nur getrackte Dateien) an die Ollama-HTTP-API (`/api/generate`). Die Kopfzeile lautet dann `[review] source: Ollama (<modell>) ...`.
 
-**Ollama-Fallback-Prompt:** strikt formuliert, Prioritätenliste (Correctness > Security > Concurrency > Error-Handling > Breaking Changes > Tests), Style-Nitpicks explizit ausgeschlossen. Jeder Fund folgt einem festen Format (`Severity`, `Category`, `Issue`, `Fix`, `Confidence`); ohne Fund antwortet das Modell exakt mit `No issues found.`.
+**Ollama-Fallback-Prompt:** strikt formuliert, Prioritätenliste (Correctness > Security > Concurrency > Error-Handling > Breaking Changes > Tests), Style-Nitpicks explizit ausgeschlossen. Die Ausgabe ist NDJSON im Schema der CodeRabbit-CLI (`--agent`): pro Fund eine Zeile `{"type":"finding","severity":...,"fileName":...,"codegenInstructions":...,"suggestions":[...],"comment":...}`, `severity` eines von `critical`, `major`, `minor`, `trivial`, `info`, `none`. Zum Schluss immer eine Zeile `{"type":"complete","findings":<anzahl>}`. Damit ist die Ausgabe unabhängig von der Quelle (CodeRabbit oder Ollama) gleich aufgebaut.
 
 **Umgebungsvariablen**
 

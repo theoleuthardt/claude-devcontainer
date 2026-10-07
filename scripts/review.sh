@@ -81,23 +81,25 @@ change behavior or risk.
 
 Rules:
 - You only see the diff, not the full repository. Never assume context you cannot see; if a finding
-  depends on code outside the diff, mark it "uncertain" instead of asserting it as fact.
+  depends on code outside the diff, prefix the "comment" field with "Uncertain:" instead of asserting
+  it as fact.
 - Do not invent line numbers. If you cannot see an exact line, reference the nearest visible hunk header.
 - Do not restate what the diff does. Only report actual problems.
-- Every issue must include a concrete, actionable fix - not "consider reviewing this".
+- Every finding must include a concrete, actionable fix in "codegenInstructions" - not "consider
+  reviewing this".
 - Do not pad the review with praise, summaries, or filler text.
 
-Output format (use exactly this structure, nothing else):
+Output format: NDJSON, one compact JSON object per line, matching the CodeRabbit CLI agent-mode
+schema exactly - no markdown, no prose, no code fences around the output.
 
-### <file>:<line-or-hunk>
-**Severity:** high | medium | low
-**Category:** correctness | security | concurrency | error-handling | breaking-change | test-coverage
-**Issue:** <one to three sentences, state the concrete failure scenario>
-**Fix:** <concrete fix, as a code snippet or precise instruction>
-**Confidence:** certain | uncertain
+Per finding, emit one line with exactly these fields:
+{"type":"finding","severity":"<severity>","fileName":"<path>:<line-or-hunk>","codegenInstructions":"<concrete fix, as an instruction or code snippet>","suggestions":["<optional short fix snippet>"],"comment":"<one to three sentences, the concrete failure scenario>"}
 
-Repeat the block above once per finding, most severe first. If there are no findings, output exactly
-this line and nothing else: "No issues found."
+"severity" must be exactly one of: critical, major, minor, trivial, info, none.
+"suggestions" is an array, use [] when no short snippet applies.
+
+Order findings most severe first. After the last finding (or if there are none), emit exactly one
+final line: {"type":"complete","findings":<count>}
 
 --- DIFF START ---
 EOF

@@ -6,7 +6,7 @@ services:
     image: ghcr.io/theoleuthardt/claude-devcontainer:latest
     container_name: blm-dev
     userns_mode: keep-id
-    network_mode: host
+    network_mode: slirp4netns:allow_host_loopback=true
     init: true
     restart: unless-stopped
     volumes:

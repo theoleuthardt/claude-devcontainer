@@ -37,7 +37,7 @@ scripts/review.sh                Quelle für /usr/local/bin/review im Image
 - **Podman-Container im LXC (rootless):** Der Dev-Container läuft als normaler Podman-Container im LXC, nicht verschachtelt.
 - **Socket durchreichen:** Der Podman-Socket des LXC-Users wird in den Container gemountet (`/run/podman.sock`). Container, die der Dev-Container startet (z. B. Testcontainers, `podman compose`), laufen als Geschwister-Container direkt im Podman des LXC.
 - **`--userns=keep-id`:** Der Nutzer im Container hat dieselbe UID wie der LXC-User und darf deshalb den Socket benutzen. Das Image muss mit derselben UID gebaut werden (`--build-arg UID=$(id -u) --build-arg GID=$(id -g)`).
-- **`--network=host`:** Von Geschwister-Containern veröffentlichte Ports liegen auf dem LXC. Mit Host-Netzwerk sind sie im Dev-Container unter `localhost` erreichbar, `TESTCONTAINERS_HOST_OVERRIDE` ist nicht nötig. Entwicklungs-Server im Container sind direkt über die LXC-IP erreichbar.
+- **`--network=slirp4netns:allow_host_loopback=true`:** `--network=host` kollidiert mit `--userns=keep-id` (crun kann dann kein frisches sysfs mehr mounten, siehe [containers/podman#10110](https://github.com/containers/podman/issues/10110)). Mit `allow_host_loopback` ist die Loopback-Adresse des LXC unter `host.containers.internal` (bzw. `10.0.2.2`) statt `localhost` erreichbar - deshalb ist `TESTCONTAINERS_HOST_OVERRIDE=host.containers.internal` im Image gesetzt. Von Geschwister-Containern veröffentlichte Ports sind so über `host.containers.internal:<port>` erreichbar, nicht über `localhost:<port>`.
 - **Startskript `/usr/local/bin/blm-start`** (Container-CMD):
   1. Klont das Repo nach `/workspace`, falls dort noch kein `.git` liegt.
   2. Startet in einer tmux-Session `claude` die Schleife `claude remote-control --name backlog-manager` (Neustart nach 15 s, falls der Prozess endet).
@@ -66,7 +66,7 @@ podman build -t blm-dev -f Containerfile \
   --build-arg UID=$(id -u) --build-arg GID=$(id -g) .
 
 podman run -d --name blm-dev \
-  --userns=keep-id --network=host \
+  --userns=keep-id --network=slirp4netns:allow_host_loopback=true \
   -v ~/work/backlog-manager:/workspace \
   -v /run/user/$(id -u)/podman/podman.sock:/run/podman.sock \
   -v blm-claude:/home/dev/.claude \
@@ -79,7 +79,7 @@ podman run -d --name blm-dev \
 
 ```bash
 podman run -d --name blm-dev \
-  --userns=keep-id --network=host \
+  --userns=keep-id --network=slirp4netns:allow_host_loopback=true \
   -v ~/work/backlog-manager:/workspace \
   -v /run/user/1000/podman/podman.sock:/run/podman.sock \
   -v blm-claude:/home/dev/.claude \
@@ -191,7 +191,7 @@ Setzen beim Start des Containers, zum Beispiel `-e OLLAMA_REVIEW_MODEL=<modell> 
 **Exit-Codes:** `0` Review geliefert, `1` Fallback nicht konfiguriert, `2` CodeRabbit und Ollama fehlgeschlagen.
 
 **Voraussetzungen und Grenzen**
-- Standard ist Ollama Cloud (`https://ollama.com`) mit `OLLAMA_API_KEY`. Für einen lokalen Server (z. B. auf dem LXC, dank `--network=host` über `127.0.0.1`) stattdessen `OLLAMA_URL` umbiegen.
+- Standard ist Ollama Cloud (`https://ollama.com`) mit `OLLAMA_API_KEY`. Für einen lokalen Server auf dem LXC stattdessen `OLLAMA_URL=http://host.containers.internal:11434` setzen (nicht `127.0.0.1`, siehe [Funktionsweise](#funktionsweise) zu `allow_host_loopback`).
 - Die Ollama-CLI ist nicht im Image nötig, das Skript nutzt `curl` und `jq`.
 - Das Ollama-Review sieht nur den Diff und nicht den Rest des Repos. Es ist eine zweite Meinung. Befunde müssen gegen den Code geprüft werden, bevor etwas geändert wird.
 - Das Kontextfenster ist wichtig: Ollama arbeitet sonst mit kleinen Standardwerten und kürzt lange Diffs. Deshalb sendet das Skript `num_ctx`.
@@ -217,7 +217,7 @@ Run it before opening a PR.
 Testcontainers sprechen über `DOCKER_HOST=unix:///run/podman.sock` mit dem Podman des LXC.
 
 - `TESTCONTAINERS_RYUK_DISABLED=true`: Ryuk macht mit Podman oft Probleme. Nachteil: Bei abgestürzten Tests bleiben Container eventuell liegen. Aufräumen mit `podman ps -a` und `podman rm -f ...`.
-- Falls du auf Host-Netzwerk verzichtest, braucht Testcontainers `TESTCONTAINERS_HOST_OVERRIDE` (z. B. `host.containers.internal`).
+- `TESTCONTAINERS_HOST_OVERRIDE=host.containers.internal`: nötig, weil der Container kein `--network=host` nutzt (siehe [Funktionsweise](#funktionsweise)), bereits im Image gesetzt.
 - Podman-in-Podman (verschachtelt) wird bewusst nicht verwendet, es ist fummelig und braucht erweiterte Rechte.
 
 ## podman und podman-compose im Container
@@ -266,5 +266,5 @@ Testcontainers sprechen über `DOCKER_HOST=unix:///run/podman.sock` mit dem Podm
 | `Clone fehlgeschlagen` | Arbeitsverzeichnis nicht leer oder kein Netzwerk |
 | Testcontainers finden keinen Docker-Host | Socket nicht gemountet oder `podman.socket` im LXC nicht aktiv |
 | Zugriff auf den Socket verweigert | UID im Image passt nicht zur LXC-UID (Build-Args), oder `--userns=keep-id` fehlt |
-| Container-Ports nicht erreichbar | Container wurde ohne `--network=host` gestartet |
+| Container-Ports/Sibling-Container nicht erreichbar | `host.containers.internal` statt `localhost` verwenden, oder `--network` fehlt `allow_host_loopback=true` |
 | Download des Claude-Code- oder CodeRabbit-Installers schlägt beim Build fehl | Netzwerk im Build-Kontext prüfen, Build wiederholen |

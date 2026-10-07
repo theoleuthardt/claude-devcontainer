@@ -73,6 +73,7 @@ RUN curl -fsSL https://taskfile.dev/install.sh | sh -s -- -b /home/${USERNAME}/.
 ENV DOCKER_HOST=unix:///run/podman.sock \
     CONTAINER_HOST=unix:///run/podman.sock \
     TESTCONTAINERS_RYUK_DISABLED=true \
+    TESTCONTAINERS_HOST_OVERRIDE=host.containers.internal \
     CLAUDE_CONFIG_DIR=/home/${USERNAME}/.claude \
     UV_LINK_MODE=copy
 

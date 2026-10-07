@@ -35,6 +35,9 @@ RUN printf '%s\n' \
         > /usr/local/bin/blm-start \
     && chmod +x /usr/local/bin/blm-start
 
+COPY review /usr/local/bin/review
+RUN chmod +x /usr/local/bin/review
+
 RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*

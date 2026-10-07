@@ -1,0 +1,105 @@
+#!/bin/bash
+# review - Code-Review mit CodeRabbit, Fallback auf Ollama
+#
+# Nutzung:  review [base-branch]        (Standard: main)
+#
+# Umgebungsvariablen:
+#   OLLAMA_REVIEW_MODEL   Modell fuer den Fallback (Pflicht, sonst kein Fallback)
+#   OLLAMA_URL            Standard: http://127.0.0.1:11434
+#   OLLAMA_API_KEY        optional, wird als Bearer-Token gesendet
+#   OLLAMA_NUM_CTX        Kontextfenster, Standard: 65536
+#   REVIEW_MAX_BYTES      maximale Diff-Groesse fuer den Fallback, Standard: 150000
+#
+# Exit-Codes: 0 = Review geliefert, 1 = Fallback nicht konfiguriert,
+#             2 = CodeRabbit und Ollama fehlgeschlagen
+
+set -u
+
+BASE="${1:-main}"
+OLLAMA_URL="${OLLAMA_URL:-http://127.0.0.1:11434}"
+OLLAMA_NUM_CTX="${OLLAMA_NUM_CTX:-65536}"
+REVIEW_MAX_BYTES="${REVIEW_MAX_BYTES:-150000}"
+LIMIT_REGEX='rate.?limit|limit reached|quota|not authenticated|unauthori[sz]ed|auth.*(required|failed)'
+
+out=$(coderabbit review --agent --base "$BASE" 2>&1)
+rc=$?
+
+if [ "$rc" -eq 0 ]; then
+  if [ -z "$out" ]; then
+    echo "[review] Quelle: CodeRabbit - keine Ausgabe (keine Findings)"
+    exit 0
+  fi
+  if printf '%s' "$out" | grep -q '"type"' || ! printf '%s' "$out" | grep -qiE "$LIMIT_REGEX"; then
+    echo "[review] Quelle: CodeRabbit"
+    printf '%s\n' "$out"
+    exit 0
+  fi
+fi
+
+echo "[review] CodeRabbit nicht nutzbar (Exit $rc), versuche Ollama-Fallback" >&2
+printf '%s\n' "$out" | head -n 5 >&2
+
+if [ -z "${OLLAMA_REVIEW_MODEL:-}" ]; then
+  echo "[review] OLLAMA_REVIEW_MODEL ist nicht gesetzt, kein Fallback moeglich" >&2
+  exit 1
+fi
+
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+  echo "[review] Kein Git-Repository im aktuellen Verzeichnis" >&2
+  exit 2
+fi
+
+merge_base=$(git merge-base "$BASE" HEAD 2>/dev/null) || {
+  echo "[review] Basis-Branch '$BASE' nicht gefunden" >&2
+  exit 2
+}
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+git diff "$merge_base" | head -c "$REVIEW_MAX_BYTES" > "$tmp/diff.txt"
+if [ ! -s "$tmp/diff.txt" ]; then
+  echo "[review] Quelle: Ollama (${OLLAMA_REVIEW_MODEL}) - keine Aenderungen gegenueber $BASE"
+  exit 0
+fi
+
+{
+  cat <<'EOF'
+You are a strict senior code reviewer. Review the following git diff.
+Focus on: bugs, security issues, concurrency and error handling, missing or weak tests, breaking API changes.
+Ignore style nitpicks. For every finding give: file and line (if visible), severity (high/medium/low),
+a short explanation, and a concrete fix suggestion. If you find nothing, say so explicitly.
+You only see the diff, not the rest of the repository, so mark anything you cannot verify as uncertain.
+
+--- DIFF START ---
+EOF
+  cat "$tmp/diff.txt"
+  printf '\n--- DIFF END ---\n'
+} > "$tmp/prompt.txt"
+
+jq -n \
+  --arg model "$OLLAMA_REVIEW_MODEL" \
+  --rawfile prompt "$tmp/prompt.txt" \
+  --argjson ctx "$OLLAMA_NUM_CTX" \
+  '{model: $model, prompt: $prompt, stream: false, options: {num_ctx: $ctx}}' > "$tmp/payload.json"
+
+auth=()
+if [ -n "${OLLAMA_API_KEY:-}" ]; then
+  auth=(-H "Authorization: Bearer $OLLAMA_API_KEY")
+fi
+
+if ! response=$(curl -fsS "${OLLAMA_URL}/api/generate" \
+      -H 'Content-Type: application/json' "${auth[@]}" \
+      --data-binary @"$tmp/payload.json"); then
+  echo "[review] Ollama-Anfrage fehlgeschlagen (${OLLAMA_URL})" >&2
+  exit 2
+fi
+
+text=$(printf '%s' "$response" | jq -r '.response // empty')
+if [ -z "$text" ]; then
+  echo "[review] Ollama hat keine Antwort geliefert" >&2
+  exit 2
+fi
+
+echo "[review] Quelle: Ollama (${OLLAMA_REVIEW_MODEL}) - nur Diff, ohne Repo-Kontext, als zweite Meinung behandeln"
+printf '%s\n' "$text"

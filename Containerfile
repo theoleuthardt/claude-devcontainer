@@ -1,8 +1,5 @@
 FROM docker.io/library/debian:trixie-slim
 
-ARG USERNAME=dev
-ARG UID=1000
-ARG GID=1000
 ARG NODE_MAJOR=22
 ARG FLUTTER_REF=stable
 
@@ -46,17 +43,11 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
 ENV FLUTTER_HOME=/opt/flutter
 
-RUN groupadd -g ${GID} ${USERNAME} \
-    && useradd -m -u ${UID} -g ${GID} -s /bin/bash ${USERNAME} \
-    && mkdir -p /workspace /home/${USERNAME}/.claude /home/${USERNAME}/.config/gh \
-    && chown -R ${USERNAME}:${USERNAME} /workspace /home/${USERNAME}
+RUN mkdir -p /workspace /root/.claude /root/.config/gh
 
-RUN git clone --depth 1 --branch ${FLUTTER_REF} https://github.com/flutter/flutter.git ${FLUTTER_HOME} \
-    && chown -R ${USERNAME}:${USERNAME} ${FLUTTER_HOME}
+RUN git clone --depth 1 --branch ${FLUTTER_REF} https://github.com/flutter/flutter.git ${FLUTTER_HOME}
 
-ENV PATH="${FLUTTER_HOME}/bin:${FLUTTER_HOME}/bin/cache/dart-sdk/bin:/home/${USERNAME}/.pub-cache/bin:/home/${USERNAME}/.local/bin:/home/${USERNAME}/.coderabbit/bin:${PATH}"
-
-USER ${USERNAME}
+ENV PATH="${FLUTTER_HOME}/bin:${FLUTTER_HOME}/bin/cache/dart-sdk/bin:/root/.pub-cache/bin:/root/.local/bin:/root/.coderabbit/bin:${PATH}"
 
 RUN flutter --disable-analytics \
     && dart --disable-analytics \
@@ -66,15 +57,14 @@ RUN flutter --disable-analytics \
 RUN curl -fsSL https://claude.ai/install.sh | bash
 
 RUN (curl -fsSL https://cli.coderabbit.ai/install.sh | sh) || true \
-    && test -x /home/${USERNAME}/.local/bin/coderabbit
+    && test -x /root/.local/bin/coderabbit
 
-RUN curl -fsSL https://taskfile.dev/install.sh | sh -s -- -b /home/${USERNAME}/.local/bin
+RUN curl -fsSL https://taskfile.dev/install.sh | sh -s -- -b /root/.local/bin
 
 ENV DOCKER_HOST=unix:///run/podman.sock \
     CONTAINER_HOST=unix:///run/podman.sock \
     TESTCONTAINERS_RYUK_DISABLED=true \
-    TESTCONTAINERS_HOST_OVERRIDE=host.containers.internal \
-    CLAUDE_CONFIG_DIR=/home/${USERNAME}/.claude \
+    CLAUDE_CONFIG_DIR=/root/.claude \
     UV_LINK_MODE=copy
 
 WORKDIR /workspace

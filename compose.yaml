@@ -1,19 +1,15 @@
-x-podman:
-  in_pod: false
-
 services:
   blm-dev:
     image: ghcr.io/theoleuthardt/claude-devcontainer:latest
     container_name: blm-dev
-    userns_mode: keep-id
-    network_mode: slirp4netns:allow_host_loopback=true
+    network_mode: host
     init: true
     restart: unless-stopped
     volumes:
       - ~/work/backlog-manager:/workspace
-      - /run/user/${DEV_UID:-1000}/podman/podman.sock:/run/podman.sock
-      - blm-claude:/home/dev/.claude
-      - blm-gh:/home/dev/.config/gh
+      - /run/podman/podman.sock:/run/podman.sock
+      - blm-claude:/root/.claude
+      - blm-gh:/root/.config/gh
 
 volumes:
   blm-claude:

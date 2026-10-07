@@ -1,12 +1,12 @@
 # Dev-Container für backlog-manager
 
-Podman-Container für die Entwicklung des Backlog Managers, gedacht für den Dauerbetrieb in einem Debian-LXC auf Proxmox. Claude Code läuft darin per Remote Control und ist über die Claude-App steuerbar.
+Podman-Container für die Entwicklung des Backlog Managers, gedacht für den Dauerbetrieb in einem **privilegierten** Debian-LXC auf Proxmox. Claude Code läuft darin per Remote Control und ist über die Claude-App steuerbar.
 
 ## Inhalt des Images
 
 | Bereich | Enthalten |
 |---|---|
-| Basis | Debian trixie (slim), Nutzer `dev` (UID/GID per Build-Arg) |
+| Basis | Debian trixie (slim), läuft als `root` |
 | Claude Code | Nativer Installer (`claude`), Konfiguration unter `~/.claude` |
 | Flutter | Stable-Kanal, Linux-Desktop-Target, Dart; Analytics deaktiviert |
 | Flutter-Linux-Abhängigkeiten | clang, cmake, ninja-build, libgtk-3-dev, libglu1-mesa |
@@ -34,10 +34,9 @@ scripts/review.sh                Quelle für /usr/local/bin/review im Image
 
 ## Funktionsweise
 
-- **Podman-Container im LXC (rootless):** Der Dev-Container läuft als normaler Podman-Container im LXC, nicht verschachtelt.
-- **Socket durchreichen:** Der Podman-Socket des LXC-Users wird in den Container gemountet (`/run/podman.sock`). Container, die der Dev-Container startet (z. B. Testcontainers, `podman compose`), laufen als Geschwister-Container direkt im Podman des LXC.
-- **`--userns=keep-id`:** Der Nutzer im Container hat dieselbe UID wie der LXC-User und darf deshalb den Socket benutzen. Das Image muss mit derselben UID gebaut werden (`--build-arg UID=$(id -u) --build-arg GID=$(id -g)`).
-- **`--network=slirp4netns:allow_host_loopback=true`:** `--network=host` kollidiert mit `--userns=keep-id` (crun kann dann kein frisches sysfs mehr mounten, siehe [containers/podman#10110](https://github.com/containers/podman/issues/10110)). Mit `allow_host_loopback` ist die Loopback-Adresse des LXC unter `host.containers.internal` (bzw. `10.0.2.2`) statt `localhost` erreichbar - deshalb ist `TESTCONTAINERS_HOST_OVERRIDE=host.containers.internal` im Image gesetzt. Von Geschwister-Containern veröffentlichte Ports sind so über `host.containers.internal:<port>` erreichbar, nicht über `localhost:<port>`.
+- **Podman-Container im LXC, als root:** Der Dev-Container läuft als normaler (rootful) Podman-Container im LXC, nicht verschachtelt. Kein UID-Mapping, kein `--userns`, dafür braucht der LXC selbst **privilegiert** zu sein (siehe [Voraussetzungen im LXC](#voraussetzungen-im-lxc)) - rootless + `--network=host` bricht an einer Podman-Upstream-Grenze (`--userns` und `--network=host` vertragen sich nicht, crun kann dann kein frisches sysfs mounten), und rootless + `slirp4netns` braucht `/dev/net/tun`, das ein unprivilegierter LXC nicht hat. Root im Container + privilegierter LXC umgeht beides.
+- **Socket durchreichen:** Der System-Podman-Socket des LXC wird in den Container gemountet (`/run/podman.sock`). Container, die der Dev-Container startet (z. B. Testcontainers, `podman compose`), laufen als Geschwister-Container direkt im Podman des LXC.
+- **`--network=host`:** Von Geschwister-Containern veröffentlichte Ports liegen auf dem LXC und sind im Dev-Container unter `localhost` erreichbar, `TESTCONTAINERS_HOST_OVERRIDE` ist nicht nötig. Entwicklungs-Server im Container sind direkt über die LXC-IP erreichbar.
 - **Startskript `/usr/local/bin/blm-start`** (Container-CMD):
   1. Klont das Repo nach `/workspace`, falls dort noch kein `.git` liegt.
   2. Startet in einer tmux-Session `claude` die Schleife `claude remote-control --name backlog-manager` (Neustart nach 15 s, falls der Prozess endet).
@@ -45,13 +44,12 @@ scripts/review.sh                Quelle für /usr/local/bin/review im Image
 
 ## Voraussetzungen im LXC
 
-1. Podman funktioniert im LXC (Proxmox-Optionen `nesting=1` und `keyctl=1` am Container).
-2. Podman-Socket für den Nutzer aktivieren:
+1. LXC **privilegiert** anlegen (in Proxmox beim Erstellen "Unprivileged container" abwählen, oder bei einem bestehenden LXC `unprivileged: 0` in `/etc/pve/lxc/<id>.conf` setzen und neu starten), dazu die Optionen `nesting=1` und `keyctl=1`.
+2. Podman-Socket systemweit aktivieren:
    ```bash
-   systemctl --user enable --now podman.socket
-   loginctl enable-linger $USER
+   systemctl enable --now podman.socket
    ```
-   Der Socket liegt danach unter `/run/user/<UID>/podman/podman.sock`.
+   Der Socket liegt danach unter `/run/podman/podman.sock`.
 3. Arbeitsverzeichnis anlegen (leer lassen):
    ```bash
    mkdir -p ~/work/backlog-manager
@@ -59,59 +57,52 @@ scripts/review.sh                Quelle für /usr/local/bin/review im Image
 
 ## Build und Start
 
-**Option A - lokal bauen (eigene UID/GID, z. B. für `--userns=keep-id` mit dem LXC-User):**
+**Option A - lokal bauen:**
 
 ```bash
-podman build -t blm-dev -f Containerfile \
-  --build-arg UID=$(id -u) --build-arg GID=$(id -g) .
+podman build -t blm-dev -f Containerfile .
 
 podman run -d --name blm-dev \
-  --userns=keep-id --network=slirp4netns:allow_host_loopback=true \
+  --network=host \
   -v ~/work/backlog-manager:/workspace \
-  -v /run/user/$(id -u)/podman/podman.sock:/run/podman.sock \
-  -v blm-claude:/home/dev/.claude \
-  -v blm-gh:/home/dev/.config/gh \
+  -v /run/podman/podman.sock:/run/podman.sock \
+  -v blm-claude:/root/.claude \
+  -v blm-gh:/root/.config/gh \
   --init --restart=unless-stopped \
   blm-dev
 ```
 
-**Option B - fertiges Image von ghcr.io (`:latest`, UID/GID darin fest auf 1000):**
+**Option B - fertiges Image von ghcr.io:**
 
 ```bash
 podman run -d --name blm-dev \
-  --userns=keep-id --network=slirp4netns:allow_host_loopback=true \
+  --network=host \
   -v ~/work/backlog-manager:/workspace \
-  -v /run/user/1000/podman/podman.sock:/run/podman.sock \
-  -v blm-claude:/home/dev/.claude \
-  -v blm-gh:/home/dev/.config/gh \
+  -v /run/podman/podman.sock:/run/podman.sock \
+  -v blm-claude:/root/.claude \
+  -v blm-gh:/root/.config/gh \
   --init --restart=unless-stopped \
   ghcr.io/theoleuthardt/claude-devcontainer:latest
 ```
 
-Passt die UID des LXC-Users nicht zu `1000`, entweder `--userns=keep-id` weglassen (normales rootless UID-Mapping, Socket-Zugriff dann ggf. anders lösen) oder selbst mit der passenden UID bauen (Option A).
-
-Alternativ mit `compose.yaml` (podman-compose). `build` und `image: ghcr.io/...` dürfen in einem Service nicht gemeinsam auf eine Registry zeigen (sonst `OSError: Dockerfile not found`, wenn das Image noch nicht lokal vorhanden ist), deshalb liegt der Build-Teil in einer separaten Override-Datei `compose.build.yaml`:
+Alternativ mit `compose.yaml` (podman-compose), Image-Referenz ist dort bereits auf `ghcr.io/theoleuthardt/claude-devcontainer:latest` gesetzt. `build` und `image: ghcr.io/...` dürfen in einem Service nicht gemeinsam auf eine Registry zeigen (sonst `OSError: Dockerfile not found`, wenn das Image noch nicht lokal vorhanden ist), deshalb liegt der Build-Teil in einer separaten Override-Datei `compose.build.yaml`:
 
 ```bash
-# fertiges ghcr.io-Image nutzen (UID/GID fest auf 1000)
+# fertiges ghcr.io-Image nutzen
 podman-compose pull && podman-compose up -d
 
-# oder lokal mit eigener UID/GID bauen und starten
-DEV_UID=$(id -u) DEV_GID=$(id -g) podman-compose -f compose.yaml -f compose.build.yaml up -d --build
+# oder lokal bauen und starten
+podman-compose -f compose.yaml -f compose.build.yaml up -d --build
 ```
-
-`UID`/`GID` sind in bash readonly, deshalb die eigenen Variablen `DEV_UID`/`DEV_GID` (Default `1000`, falls nicht gesetzt).
-
-`compose.yaml` setzt `x-podman: in_pod: false`, weil podman-compose sonst standardmäßig einen Pod anlegt und `--userns=keep-id` dann mit `--pod` kollidiert (`Error: --userns and --pod cannot be set together`). Greift das bei deiner podman-compose-Version nicht, stattdessen `podman-compose --in-pod=false up -d` aufrufen.
 
 - Die Datei `scripts/review.sh` muss relativ zur `Containerfile` unter `scripts/` liegen (Build-Kontext), sonst scheitert der `COPY`-Schritt. Ein fehlendes Ausführungsrecht ist unkritisch, die Containerfile setzt es selbst.
 - `--init` sorgt dafür, dass der Container sauber auf Stop-Signale reagiert.
-- Build-Args mit Standardwerten: `NODE_MAJOR=22`, `FLUTTER_REF=stable` (Branch oder Tag, z. B. `3.35.0`), `USERNAME=dev`.
+- Build-Args mit Standardwerten: `NODE_MAJOR=22`, `FLUTTER_REF=stable` (Branch oder Tag, z. B. `3.35.0`).
 - Umgebungsvariable `REPO_URL` (im Image gesetzt) bestimmt, welches Repo beim ersten Start geklont wird.
 
 ## Image aus ghcr.io
 
-`.github/workflows/build-image.yml` baut das Image bei jedem Push auf `main` (der relevanten Dateien) und bei manuellem Trigger, und pusht es nach `ghcr.io/theoleuthardt/claude-devcontainer:latest` sowie `:<sha>`. Build-Args `UID`/`GID` sind dort auf `1000` fixiert; für eine andere LXC-UID lokal selbst bauen (siehe Option A oben).
+`.github/workflows/build-image.yml` baut das Image bei jedem Push auf `main` (der relevanten Dateien) und bei manuellem Trigger, und pusht es nach `ghcr.io/theoleuthardt/claude-devcontainer:latest` sowie `:<sha>`.
 
 ```bash
 podman pull ghcr.io/theoleuthardt/claude-devcontainer:latest
@@ -191,7 +182,7 @@ Setzen beim Start des Containers, zum Beispiel `-e OLLAMA_REVIEW_MODEL=<modell> 
 **Exit-Codes:** `0` Review geliefert, `1` Fallback nicht konfiguriert, `2` CodeRabbit und Ollama fehlgeschlagen.
 
 **Voraussetzungen und Grenzen**
-- Standard ist Ollama Cloud (`https://ollama.com`) mit `OLLAMA_API_KEY`. Für einen lokalen Server auf dem LXC stattdessen `OLLAMA_URL=http://host.containers.internal:11434` setzen (nicht `127.0.0.1`, siehe [Funktionsweise](#funktionsweise) zu `allow_host_loopback`).
+- Standard ist Ollama Cloud (`https://ollama.com`) mit `OLLAMA_API_KEY`. Für einen lokalen Server (z. B. auf dem LXC, dank `--network=host` über `127.0.0.1`) stattdessen `OLLAMA_URL` umbiegen.
 - Die Ollama-CLI ist nicht im Image nötig, das Skript nutzt `curl` und `jq`.
 - Das Ollama-Review sieht nur den Diff und nicht den Rest des Repos. Es ist eine zweite Meinung. Befunde müssen gegen den Code geprüft werden, bevor etwas geändert wird.
 - Das Kontextfenster ist wichtig: Ollama arbeitet sonst mit kleinen Standardwerten und kürzt lange Diffs. Deshalb sendet das Skript `num_ctx`.
@@ -217,7 +208,7 @@ Run it before opening a PR.
 Testcontainers sprechen über `DOCKER_HOST=unix:///run/podman.sock` mit dem Podman des LXC.
 
 - `TESTCONTAINERS_RYUK_DISABLED=true`: Ryuk macht mit Podman oft Probleme. Nachteil: Bei abgestürzten Tests bleiben Container eventuell liegen. Aufräumen mit `podman ps -a` und `podman rm -f ...`.
-- `TESTCONTAINERS_HOST_OVERRIDE=host.containers.internal`: nötig, weil der Container kein `--network=host` nutzt (siehe [Funktionsweise](#funktionsweise)), bereits im Image gesetzt.
+- Falls du auf Host-Netzwerk verzichtest, braucht Testcontainers `TESTCONTAINERS_HOST_OVERRIDE` (z. B. `host.containers.internal`).
 - Podman-in-Podman (verschachtelt) wird bewusst nicht verwendet, es ist fummelig und braucht erweiterte Rechte.
 
 ## podman und podman-compose im Container
@@ -237,8 +228,9 @@ Testcontainers sprechen über `DOCKER_HOST=unix:///run/podman.sock` mit dem Podm
 
 ## Sicherheit
 
-- Wer den Podman-Socket hat, kontrolliert alle rootless Container dieses LXC-Users. Läuft Claude Code mit großzügigen Rechten, entspricht das praktisch Zugriff auf alles, was dieser User betreibt.
-- Empfehlung: einen eigenen LXC-User für den Dev-Container verwenden, nicht den, unter dem produktive Container (z. B. das Prod-Backend) laufen.
+- Der LXC ist **privilegiert** und der Dev-Container läuft als **root** mit Zugriff auf den System-Podman-Socket. Wer das Image oder den Container kontrolliert, kontrolliert damit praktisch den ganzen LXC (und je nach Proxmox-Konfiguration potenziell mehr - privilegierte LXCs haben einen deutlich größeren Blast-Radius als unprivilegierte).
+- Empfehlung: einen eigenen, isolierten LXC nur für diesen Dev-Container verwenden, nicht einen, der auch produktive Dienste (z. B. das Prod-Backend) hostet.
+- Kein Secrets-Zugriff über das Image hinaus nötig geben: Claude- und gh-Login liegen in eigenen Volumes, nicht im Image.
 
 ## Wartung
 
@@ -265,6 +257,7 @@ Testcontainers sprechen über `DOCKER_HOST=unix:///run/podman.sock` mit dem Podm
 | Remote Control erscheint nicht in der App | Noch nicht angemeldet, Ordner-Vertrauen nicht bestätigt, oder ein gesperrtes Setup (Gateway, API-Key, Telemetrie-Variablen) |
 | `Clone fehlgeschlagen` | Arbeitsverzeichnis nicht leer oder kein Netzwerk |
 | Testcontainers finden keinen Docker-Host | Socket nicht gemountet oder `podman.socket` im LXC nicht aktiv |
-| Zugriff auf den Socket verweigert | UID im Image passt nicht zur LXC-UID (Build-Args), oder `--userns=keep-id` fehlt |
-| Container-Ports/Sibling-Container nicht erreichbar | `host.containers.internal` statt `localhost` verwenden, oder `--network` fehlt `allow_host_loopback=true` |
+| Zugriff auf den Socket verweigert | `/run/podman/podman.sock` nicht gemountet, oder `podman.socket` im LXC nicht als root/systemweit aktiv (siehe [Voraussetzungen im LXC](#voraussetzungen-im-lxc)) |
+| `crun: mount sysfs to sys: Operation not permitted` beim Start | LXC ist nicht privilegiert (siehe [Voraussetzungen im LXC](#voraussetzungen-im-lxc)) |
+| Container-Ports nicht erreichbar | Container wurde ohne `--network=host` gestartet |
 | Download des Claude-Code- oder CodeRabbit-Installers schlägt beim Build fehl | Netzwerk im Build-Kontext prüfen, Build wiederholen |

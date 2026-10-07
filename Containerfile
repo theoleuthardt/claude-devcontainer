@@ -65,7 +65,8 @@ RUN flutter --disable-analytics \
 
 RUN curl -fsSL https://claude.ai/install.sh | bash
 
-RUN curl -fsSL https://cli.coderabbit.ai/install.sh | sh
+RUN (curl -fsSL https://cli.coderabbit.ai/install.sh | sh) || true \
+    && test -x /home/${USERNAME}/.local/bin/coderabbit
 
 RUN curl -fsSL https://taskfile.dev/install.sh | sh -s -- -b /home/${USERNAME}/.local/bin
 

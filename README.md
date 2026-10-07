@@ -26,6 +26,7 @@ Nicht enthalten: Chromium/Flutter Web, Rust/Tauri, Java (siehe [Optionale Erweit
 
 ```
 Containerfile                   Image-Definition
+compose.yaml                     podman-compose-Alternative zu build/run
 scripts/review.sh                Quelle für /usr/local/bin/review im Image
 .github/workflows/build-image.yml  baut das Image und pusht es nach ghcr.io
 ```
@@ -70,6 +71,14 @@ podman run -d --name blm-dev \
   --init --restart=unless-stopped \
   blm-dev
 ```
+
+Alternativ mit `compose.yaml` (podman-compose):
+
+```bash
+DEV_UID=$(id -u) DEV_GID=$(id -g) podman-compose up -d --build
+```
+
+`UID`/`GID` sind in bash readonly, deshalb die eigenen Variablen `DEV_UID`/`DEV_GID` (Default `1000`, falls nicht gesetzt).
 
 - Die Datei `scripts/review.sh` muss relativ zur `Containerfile` unter `scripts/` liegen (Build-Kontext), sonst scheitert der `COPY`-Schritt. Ein fehlendes Ausführungsrecht ist unkritisch, die Containerfile setzt es selbst.
 - `--init` sorgt dafür, dass der Container sauber auf Stop-Signale reagiert.

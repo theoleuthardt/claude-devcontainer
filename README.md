@@ -58,6 +58,8 @@ scripts/review.sh                Quelle für /usr/local/bin/review im Image
 
 ## Build und Start
 
+**Option A - lokal bauen (eigene UID/GID, z. B. für `--userns=keep-id` mit dem LXC-User):**
+
 ```bash
 podman build -t blm-dev -f Containerfile \
   --build-arg UID=$(id -u) --build-arg GID=$(id -g) .
@@ -72,9 +74,28 @@ podman run -d --name blm-dev \
   blm-dev
 ```
 
-Alternativ mit `compose.yaml` (podman-compose):
+**Option B - fertiges Image von ghcr.io (`:latest`, UID/GID darin fest auf 1000):**
 
 ```bash
+podman run -d --name blm-dev \
+  --userns=keep-id --network=host \
+  -v ~/work/backlog-manager:/workspace \
+  -v /run/user/1000/podman/podman.sock:/run/podman.sock \
+  -v blm-claude:/home/dev/.claude \
+  -v blm-gh:/home/dev/.config/gh \
+  --init --restart=unless-stopped \
+  ghcr.io/theoleuthardt/claude-devcontainer:latest
+```
+
+Passt die UID des LXC-Users nicht zu `1000`, entweder `--userns=keep-id` weglassen (normales rootless UID-Mapping, Socket-Zugriff dann ggf. anders lösen) oder selbst mit der passenden UID bauen (Option A).
+
+Alternativ mit `compose.yaml` (podman-compose), Image-Referenz ist dort bereits auf `ghcr.io/theoleuthardt/claude-devcontainer:latest` gesetzt:
+
+```bash
+# fertiges ghcr.io-Image nutzen (UID/GID fest auf 1000)
+podman-compose pull && podman-compose up -d
+
+# oder lokal mit eigener UID/GID bauen und starten
 DEV_UID=$(id -u) DEV_GID=$(id -g) podman-compose up -d --build
 ```
 
@@ -87,7 +108,7 @@ DEV_UID=$(id -u) DEV_GID=$(id -g) podman-compose up -d --build
 
 ## Image aus ghcr.io
 
-`.github/workflows/build-image.yml` baut das Image bei jedem Push auf `main` (der relevanten Dateien) und bei manuellem Trigger, und pusht es nach `ghcr.io/<repo>:latest` sowie `:<sha>`. Build-Args `UID`/`GID` sind dort auf `1000` fixiert; für eine andere LXC-UID lokal selbst bauen (siehe oben).
+`.github/workflows/build-image.yml` baut das Image bei jedem Push auf `main` (der relevanten Dateien) und bei manuellem Trigger, und pusht es nach `ghcr.io/theoleuthardt/claude-devcontainer:latest` sowie `:<sha>`. Build-Args `UID`/`GID` sind dort auf `1000` fixiert; für eine andere LXC-UID lokal selbst bauen (siehe Option A oben).
 
 ```bash
 podman pull ghcr.io/theoleuthardt/claude-devcontainer:latest

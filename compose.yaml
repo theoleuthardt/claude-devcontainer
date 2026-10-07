@@ -6,7 +6,7 @@ services:
       args:
         UID: ${DEV_UID:-1000}
         GID: ${DEV_GID:-1000}
-    image: blm-dev
+    image: ghcr.io/theoleuthardt/claude-devcontainer:latest
     container_name: blm-dev
     userns_mode: keep-id
     network_mode: host

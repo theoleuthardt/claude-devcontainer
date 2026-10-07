@@ -115,16 +115,7 @@ Für einen lokalen Server statt Cloud: `OLLAMA_URL=http://127.0.0.1:11434` (dank
 
 **Exit-Codes:** `0` geliefert, `1` Fallback nicht konfiguriert, `2` beide Quellen fehlgeschlagen. Ollama sieht nur den Diff, nicht das Repo - als zweite Meinung behandeln, Befunde gegen den Code prüfen.
 
-**Regel für Claude (`CLAUDE.md`):**
-
-```markdown
-## Code review
-
-Run `review [base-branch]` (default: main) instead of calling `coderabbit` directly.
-It uses CodeRabbit and falls back to an Ollama model when CodeRabbit is unavailable.
-Ollama output only sees the diff: treat it as a second opinion and verify every point
-against the code before changing anything. Run it before opening a PR.
-```
+**Claude nutzt `review` statt des eigenen `/code-review`-Skills:** `blm-start` schreibt die Regel (`scripts/claude-review-rule.md`) beim ersten Boot nach `~/.claude/CLAUDE.md`, falls die Datei noch nicht existiert (eigene Edits dort bleiben danach unberührt). Kein manueller Schritt nötig - nur falls `~/.claude/CLAUDE.md` schon vor dem ersten Start existierte (z. B. Volume von einem älteren Setup übernommen), die Regel von Hand ergänzen.
 
 ## Testcontainers & podman im Container
 

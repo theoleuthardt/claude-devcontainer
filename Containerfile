@@ -25,6 +25,7 @@ RUN printf '%s\n' \
         '#!/bin/bash' \
         'export TERM=xterm-256color' \
         '[ -d /workspace/.git ] || git clone "$REPO_URL" /workspace || echo "Clone fehlgeschlagen"' \
+        '[ -f /root/.claude/CLAUDE.md ] || cp /usr/local/share/claude-review-rule.md /root/.claude/CLAUDE.md' \
         'rc_loop() { while true; do claude remote-control --name backlog-manager; echo "Remote Control beendet - Neustart in 15s"; sleep 15; done; }' \
         'export -f rc_loop' \
         'tmux new-session -d -s claude -c /workspace "bash -c rc_loop"' \
@@ -34,6 +35,8 @@ RUN printf '%s\n' \
 
 COPY scripts/review.sh /usr/local/bin/review
 RUN chmod +x /usr/local/bin/review
+
+COPY scripts/claude-review-rule.md /usr/local/share/claude-review-rule.md
 
 RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \

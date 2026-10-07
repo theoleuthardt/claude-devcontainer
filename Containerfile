@@ -49,6 +49,8 @@ RUN git clone --depth 1 --branch ${FLUTTER_REF} https://github.com/flutter/flutt
 
 ENV PATH="${FLUTTER_HOME}/bin:${FLUTTER_HOME}/bin/cache/dart-sdk/bin:/root/.pub-cache/bin:/root/.local/bin:/root/.coderabbit/bin:${PATH}"
 
+RUN printf '\nexport PATH="%s"\n' "${PATH}" >> /root/.bashrc
+
 RUN flutter --disable-analytics \
     && dart --disable-analytics \
     && flutter config --enable-linux-desktop \

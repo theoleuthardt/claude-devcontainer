@@ -1,0 +1,8 @@
+services:
+  blm-dev:
+    build:
+      context: .
+      dockerfile: Containerfile
+      args:
+        UID: ${DEV_UID:-1000}
+        GID: ${DEV_GID:-1000}

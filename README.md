@@ -26,7 +26,8 @@ Nicht enthalten: Chromium/Flutter Web, Rust/Tauri, Java (siehe [Optionale Erweit
 
 ```
 Containerfile                   Image-Definition
-compose.yaml                     podman-compose-Alternative zu build/run
+compose.yaml                     podman-compose, nutzt per Default das ghcr.io-Image
+compose.build.yaml               Override: lokal mit Containerfile bauen statt pullen
 scripts/review.sh                Quelle für /usr/local/bin/review im Image
 .github/workflows/build-image.yml  baut das Image und pusht es nach ghcr.io
 ```
@@ -89,14 +90,14 @@ podman run -d --name blm-dev \
 
 Passt die UID des LXC-Users nicht zu `1000`, entweder `--userns=keep-id` weglassen (normales rootless UID-Mapping, Socket-Zugriff dann ggf. anders lösen) oder selbst mit der passenden UID bauen (Option A).
 
-Alternativ mit `compose.yaml` (podman-compose), Image-Referenz ist dort bereits auf `ghcr.io/theoleuthardt/claude-devcontainer:latest` gesetzt:
+Alternativ mit `compose.yaml` (podman-compose). `build` und `image: ghcr.io/...` dürfen in einem Service nicht gemeinsam auf eine Registry zeigen (sonst `OSError: Dockerfile not found`, wenn das Image noch nicht lokal vorhanden ist), deshalb liegt der Build-Teil in einer separaten Override-Datei `compose.build.yaml`:
 
 ```bash
 # fertiges ghcr.io-Image nutzen (UID/GID fest auf 1000)
 podman-compose pull && podman-compose up -d
 
 # oder lokal mit eigener UID/GID bauen und starten
-DEV_UID=$(id -u) DEV_GID=$(id -g) podman-compose up -d --build
+DEV_UID=$(id -u) DEV_GID=$(id -g) podman-compose -f compose.yaml -f compose.build.yaml up -d --build
 ```
 
 `UID`/`GID` sind in bash readonly, deshalb die eigenen Variablen `DEV_UID`/`DEV_GID` (Default `1000`, falls nicht gesetzt).

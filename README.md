@@ -50,10 +50,11 @@ scripts/review.sh                Quelle für /usr/local/bin/review im Image
    systemctl enable --now podman.socket
    ```
    Der Socket liegt danach unter `/run/podman/podman.sock`.
-3. Arbeitsverzeichnis anlegen (leer lassen):
+3. Arbeitsverzeichnis anlegen (leer lassen) - das ist nur das Clone-Ziel für `backlog-manager`, nicht der Ort für `Containerfile`/`compose.yaml` dieses Repos:
    ```bash
    mkdir -p ~/work/backlog-manager
    ```
+   `Containerfile`, `compose.yaml` & Co. gehören in ein eigenes Verzeichnis (z. B. `~/claude-devcontainer`), von dort `podman build`/`podman-compose` ausführen. Liegt `compose.yaml` versehentlich in `~/work/backlog-manager` selbst, ist der Ordner nicht mehr leer und der Clone beim Container-Start schlägt dauerhaft fehl (`fatal: destination path '/workspace' already exists and is not an empty directory`).
 
 ## Build und Start
 
@@ -129,7 +130,7 @@ Danach verbindet sich Fenster 0 beim nächsten Retry (alle 15 s) selbst mit Remo
 
 Hinweise:
 - Der Clone beim ersten Start geht ohne Login (öffentliches Repo über HTTPS). Zum Pushen ist `gh auth setup-git` nötig.
-- Schlägt der Clone fehl, steht `Clone fehlgeschlagen` im tmux-Fenster. Häufigste Ursache: `~/work/backlog-manager` ist nicht leer und enthält kein Git-Repo.
+- Schlägt der Clone fehl, steht `Clone fehlgeschlagen` im tmux-Fenster (bzw. in `podman logs blm-dev`). Häufigste Ursache: `~/work/backlog-manager` ist nicht leer und enthält kein Git-Repo - z. B. weil `compose.yaml` versehentlich dort statt in einem eigenen Verzeichnis liegt.
 - Der CodeRabbit-Login und die Git-Identität gehen bei einer Neuanlage des Containers verloren. Ein Volume auf `~/.coderabbit` würde die installierte Binary überdecken, deshalb gibt es keins.
 
 ## Remote Control
@@ -255,7 +256,7 @@ Testcontainers sprechen über `DOCKER_HOST=unix:///run/podman.sock` mit dem Podm
 | Symptom | Mögliche Ursache |
 |---|---|
 | Remote Control erscheint nicht in der App | Noch nicht angemeldet, Ordner-Vertrauen nicht bestätigt, oder ein gesperrtes Setup (Gateway, API-Key, Telemetrie-Variablen) |
-| `Clone fehlgeschlagen` | Arbeitsverzeichnis nicht leer oder kein Netzwerk |
+| `Clone fehlgeschlagen` | Arbeitsverzeichnis nicht leer (z. B. `compose.yaml` liegt versehentlich darin statt in einem eigenen Verzeichnis) oder kein Netzwerk |
 | Testcontainers finden keinen Docker-Host | Socket nicht gemountet oder `podman.socket` im LXC nicht aktiv |
 | Zugriff auf den Socket verweigert | `/run/podman/podman.sock` nicht gemountet, oder `podman.socket` im LXC nicht als root/systemweit aktiv (siehe [Voraussetzungen im LXC](#voraussetzungen-im-lxc)) |
 | `crun: mount sysfs to sys: Operation not permitted` beim Start | LXC ist nicht privilegiert (siehe [Voraussetzungen im LXC](#voraussetzungen-im-lxc)) |
